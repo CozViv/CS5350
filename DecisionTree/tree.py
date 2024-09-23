@@ -69,45 +69,63 @@ def calculate_gain(data, feature_index, target, f):
 
 def build_tree(data, target, features, f='entropy', depth=0, max_depth=None):
     labels = data[target]
-    
-    # 1
+
     if len(set(labels)) == 1:
         return labels.iloc[0]
+
     if len(features) == 0 or (max_depth is not None and depth >= max_depth):
-        return labels.mode()[0]
-    
-    #2
-    #2.2
+        if len(labels) == 0:
+            return None
+        mode_label = labels.mode()
+        if len(mode_label) > 0:
+            return mode_label[0]
+        else:
+            return None
+
     gains = [calculate_gain(data, i, target, f) for i in range(len(features))]
     best_feature_index = gains.index(max(gains))
     best_feature = features[best_feature_index]
-    #print("best feature:", best_feature)
-    #2.1
     tree = {best_feature: {}}
 
-    #print("data.iloc: ",data.iloc[:, best_feature_index])
-    feature_values = data.iloc[:, best_feature_index].unique()
-    remaining_features = [f for f in features if f != best_feature]
-    
-    #print("feature values:", feature_values)
-    #print("remaining features:", remaining_features)
-    #3
-    for value in feature_values:
-        #3.2
-        subset = data[data.iloc[:, best_feature_index] == value]
-        subset = subset.drop(columns=[best_feature])
-        #3.3
-        subtree = build_tree(subset, target, remaining_features, f, depth + 1, max_depth)
-        #3.1
-        tree[best_feature][value] = subtree
+    feature_type = data[best_feature].dtype
 
-    #4
+    if pd.api.types.is_numeric_dtype(feature_type):
+        # Create subsets based on median
+        median = data[best_feature].median()
+        subset_less_equal = data[data[best_feature] <= median]
+        subset_greater = data[data[best_feature] > median]
+        subset_less_equal = subset_less_equal.drop(columns=[best_feature])
+        subset_greater = subset_greater.drop(columns=[best_feature])
+
+        remaining_features = [f for f in features if f != best_feature]
+
+        # Recursively build the tree for each subset
+        tree[best_feature]['<= ' + str(median)] = build_tree(subset_less_equal, target, remaining_features, f, depth + 1, max_depth)
+        tree[best_feature]['> ' + str(median)] = build_tree(subset_greater, target, remaining_features, f, depth + 1, max_depth)
+    else:
+        # If the feature is categorical, split by unique values
+        feature_values = data[best_feature].unique()
+        remaining_features = [f for f in features if f != best_feature]
+
+        for value in feature_values:
+            subset = data[data[best_feature] == value].copy()
+            subset = subset.drop(columns=[best_feature])
+
+            subtree = build_tree(subset, target, remaining_features, f, depth + 1, max_depth)
+            tree[best_feature][value] = subtree
+
     return tree
 
-def decision_tree_from_csv(file_path, target, columns, f='entropy', max_depth=None):
-    data = pd.read_csv(file_path, header=None)
-    data = data.astype(str)
-    data.columns = columns
+
+
+
+def decision_tree_from_csv(file_path, target, columns, f='entropy', max_depth=None, types=None):
+    data = pd.read_csv(file_path, header=None, names=columns)
+
+    # Apply the correct data types if provided
+    if types:
+        data = data.astype(types)
+
     features = [col for col in data.columns if col != target]
     tree = build_tree(data, target, features, f, max_depth=max_depth)
     return tree
@@ -116,16 +134,25 @@ def predict(tree, instance):
     if not isinstance(tree, dict):
         return tree
 
-    #feature = next(iter(tree))
     feature = list(tree.keys())[0]
+
     feature_value = instance[feature]
 
-    if feature_value in tree[feature]:
-        return predict(tree[feature][feature_value], instance)
-    else:
-        # Handle unseen feature values
-        #print(feature, feature_value)
-        return "Unknown"
+    if isinstance(tree[feature], dict):
+        for condition, subtree in tree[feature].items():
+            if "<=" in condition:
+                median_value = float(condition.split("<=")[1].strip()) # Isolate median
+                if float(feature_value) <= median_value:
+                    return predict(subtree, instance)
+            elif ">" in condition:
+                median_value = float(condition.split(">")[1].strip()) # Isolate median
+                if float(feature_value) > median_value:
+                    return predict(subtree, instance)
+            elif feature_value == condition: # If not a <= or >, split on values
+                return predict(subtree, instance)
+
+    return "Unknown" # Return unknown if there is no prediction (did not appear in training tree)
+
 
 def calculate_error_rate(predictions, actual_labels):
     incorrect_predictions = sum(pred != actual for pred, actual in zip(predictions, actual_labels))
@@ -140,8 +167,6 @@ def test_decision_tree(tree, test_data, target):
         predictions.append(prediction)
     
     error_rate = calculate_error_rate(predictions, actual_labels)
-    #print(predictions)
-    #print(actual_labels)
     return predictions, error_rate
 
 # Training data
@@ -161,7 +186,7 @@ for i in range(1,7):
     tree_entropy = decision_tree_from_csv(file_path, target_column, columns, f='entropy', max_depth=md)
     #print(tree_entropy)
     predictions_entropy, error_rate_entropy = test_decision_tree(tree_entropy, test_data, target_column)
-    print(f"Accuracy for training set with Entropy at depth of {md}:", 1 - error_rate_entropy)
+    #print(f"Accuracy for training set with Entropy at depth of {md}:", 1 - error_rate_entropy)
     average_e_train += (1-error_rate_entropy)
 average_e_train = average_e_train/6
 print("\n")
@@ -171,7 +196,7 @@ for i in range(1,7):
     md = i
     tree_gini = decision_tree_from_csv(file_path, target_column, columns, f='gini', max_depth=md)
     predictions_gini, error_rate_gini = test_decision_tree(tree_gini, test_data, target_column)
-    print(f"Accuracy for training set with Gini at depth of {md}", 1 - error_rate_gini)
+    #print(f"Accuracy for training set with Gini at depth of {md}", 1 - error_rate_gini)
     average_g_train += (1-error_rate_gini)
 average_g_train = average_g_train/6
 print("\n")
@@ -181,7 +206,7 @@ for i in range(1,7):
     md = i
     tree_me = decision_tree_from_csv(file_path, target_column, columns, f='majority_error', max_depth=md)
     predictions_me, error_rate_me = test_decision_tree(tree_me, test_data, target_column)
-    print(f"Accuracy for training set with ME at depth of {md}", 1 - error_rate_me)
+    #print(f"Accuracy for training set with ME at depth of {md}", 1 - error_rate_me)
     average_m_train += 1-error_rate_me
 average_m_train = average_m_train/6
 
@@ -229,3 +254,132 @@ print("Average accuracy on training set for ME: ", average_m_train)
 print("Average accuracy on test set for entropy: ", average_e_test)
 print("Average accuracy on test set for GI: ", average_g_test)
 print("Average accuracy on test set for ME: ", average_m_test)
+
+print("\n")
+
+# Training data
+file_path_bank_train = 'bank/train.csv'
+target_column_bank = "label"
+columns_bank = ["age", "job", "marital", "education", "default", "balance", "housing", "loan", "contact", "day", "month", "duration", "campaign", "pdays", "previous", "poutcome", "label"]
+types = {
+    "age":  int,
+    "job": 'category',
+    "marital": 'category',
+    "education": 'category',
+    "default": 'category',
+    "balance": int,
+    "housing": 'category',
+    "loan": 'category',
+    "contact": 'category',
+    "day": int,
+    "month": 'category',
+    "duration": int,
+    "campaign": int,
+    "pdays": int,
+    "previous": int,
+    "poutcome": 'category',
+    "label": 'category'
+}
+train_data_bank = test_data_bank = pd.read_csv(file_path_bank_train, header=None)
+train_data_bank.columns = columns_bank
+
+file_path_bank_test = 'bank/test.csv'
+test_data_bank  = test_data_bank = pd.read_csv(file_path_bank_test, header=None)
+test_data_bank.columns = columns_bank
+
+print("Part A------------") # Treating unknown as value
+average_e_train = 0
+average_g_train = 0
+average_m_train = 0
+average_e_test = 0
+average_g_test = 0
+average_m_test = 0
+for i in range(1,17):
+    print(i)
+    md = i
+    tree_bank_e = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='entropy', max_depth=md, types=types)
+    tree_bank_g = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='gini', max_depth=md, types=types)
+    tree_bank_m = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='majority_error', max_depth=md, types=types)
+
+
+    _, error_rate_bank_train_e = test_decision_tree(tree_bank_e, train_data_bank, target_column_bank)
+    _, error_rate_bank_train_g = test_decision_tree(tree_bank_g, train_data_bank, target_column_bank)
+    _, error_rate_bank_train_m = test_decision_tree(tree_bank_m, train_data_bank, target_column_bank)
+    _, error_rate_bank_test_e = test_decision_tree(tree_bank_e, test_data_bank, target_column_bank)
+    _, error_rate_bank_test_g = test_decision_tree(tree_bank_g, test_data_bank, target_column_bank)
+    _, error_rate_bank_test_m = test_decision_tree(tree_bank_m, test_data_bank, target_column_bank)
+
+    average_e_train += 1 - error_rate_bank_train_e
+    average_g_train += 1 - error_rate_bank_train_g
+    average_m_train += 1 - error_rate_bank_train_m
+    average_e_test += 1 - error_rate_bank_test_e
+    average_g_test += 1 - error_rate_bank_test_g
+    average_m_test += 1 - error_rate_bank_test_m
+
+average_e_train = average_e_train/16
+average_g_train = average_g_train/16
+average_m_train = average_m_train/16
+average_e_test = average_e_test/16
+average_g_test = average_g_test/16
+average_m_test = average_m_test/16
+
+print("Average for training set on Entropy tree: ", average_e_train)
+print("Average for training set on GI tree: ", average_g_train)
+print("Average for training set on ME tree: ", average_m_train)
+print("Average for testing set on Entropy tree: ", average_e_test)
+print("Average for testing set on GI tree: ", average_g_test)
+print("Average for testing set on ME tree: ", average_m_test)
+
+print("\n")
+
+# Proccess data
+for column in columns_bank:
+    most_common_value = train_data_bank[column].mode()[0]
+    train_data_bank[column].replace("unknown", most_common_value, inplace=True)
+for column in columns_bank:
+    most_common_value = test_data_bank[column].mode()[0]
+    test_data_bank[column].replace("unknown", most_common_value, inplace=True)
+
+
+print("Part B------------") # Treating unknown as most common
+average_e_train = 0
+average_g_train = 0
+average_m_train = 0
+average_e_test = 0
+average_g_test = 0
+average_m_test = 0
+for i in range(1,17):
+    print(i)
+    md = i
+    tree_bank_e = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='entropy', max_depth=md, types=types)
+    tree_bank_g = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='gini', max_depth=md, types=types)
+    tree_bank_m = decision_tree_from_csv(file_path_bank_train, target_column_bank, columns_bank, f='majority_error', max_depth=md, types=types)
+
+
+    _, error_rate_bank_train_e = test_decision_tree(tree_bank_e, train_data_bank, target_column_bank)
+    _, error_rate_bank_train_g = test_decision_tree(tree_bank_g, train_data_bank, target_column_bank)
+    _, error_rate_bank_train_m = test_decision_tree(tree_bank_m, train_data_bank, target_column_bank)
+    _, error_rate_bank_test_e = test_decision_tree(tree_bank_e, test_data_bank, target_column_bank)
+    _, error_rate_bank_test_g = test_decision_tree(tree_bank_g, test_data_bank, target_column_bank)
+    _, error_rate_bank_test_m = test_decision_tree(tree_bank_m, test_data_bank, target_column_bank)
+
+    average_e_train += 1 - error_rate_bank_train_e
+    average_g_train += 1 - error_rate_bank_train_g
+    average_m_train += 1 - error_rate_bank_train_m
+    average_e_test += 1 - error_rate_bank_test_e
+    average_g_test += 1 - error_rate_bank_test_g
+    average_m_test += 1 - error_rate_bank_test_m
+
+average_e_train = average_e_train/16
+average_g_train = average_g_train/16
+average_m_train = average_m_train/16
+average_e_test = average_e_test/16
+average_g_test = average_g_test/16
+average_m_test = average_m_test/16
+
+print("Average for training set on Entropy tree: ", average_e_train)
+print("Average for training set on GI tree: ", average_g_train)
+print("Average for training set on ME tree: ", average_m_train)
+print("Average for testing set on Entropy tree: ", average_e_test)
+print("Average for testing set on GI tree: ", average_g_test)
+print("Average for testing set on ME tree: ", average_m_test)
