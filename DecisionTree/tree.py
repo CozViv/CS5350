@@ -116,9 +116,6 @@ def build_tree(data, target, features, f='entropy', depth=0, max_depth=None):
 
     return tree
 
-
-
-
 def decision_tree_from_csv(file_path, target, columns, f='entropy', max_depth=None, types=None):
     data = pd.read_csv(file_path, header=None, names=columns)
 
@@ -152,7 +149,6 @@ def predict(tree, instance):
                 return predict(subtree, instance)
 
     return "Unknown" # Return unknown if there is no prediction (did not appear in training tree)
-
 
 def calculate_error_rate(predictions, actual_labels):
     incorrect_predictions = sum(pred != actual for pred, actual in zip(predictions, actual_labels))
