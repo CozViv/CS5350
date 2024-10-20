@@ -160,10 +160,10 @@ class DecisionTreeStump:
     def entropy(self, labels, weights):
         total = len(labels)
         value_counts = {}
-        for label in labels:
+        for label, weight in zip(labels, weights):
             if label not in value_counts:
                 value_counts[label] = 0
-            value_counts[label] += 1
+            value_counts[label] += weight
 
         entropy_value = 0
         for count in value_counts.values():
@@ -176,12 +176,15 @@ class DecisionTreeStump:
         
         values = data.iloc[:, feature_index].unique()
         weighted_error = 0
+        proportion = 0
         for value in values:
             subset = data[data.iloc[:, feature_index] == value]
-            subset_weights = data[data.iloc[:, feature_index] == value]
+            subset_indexes = subset.index.tolist()
+            np_weights = np.array(weights)
+            subset_weights = np_weights[subset_indexes]
             subset_error = self.entropy(subset[target], subset_weights)
-            
-            weighted_error += (len(subset) / len(data)) * subset_error
+            proportion = sum(subset_weights)/sum(weights)
+            weighted_error += proportion * (len(subset) / len(data)) * subset_error
         
         gain = total_error - weighted_error
         return gain

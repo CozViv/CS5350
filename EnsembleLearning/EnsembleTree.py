@@ -14,7 +14,8 @@ class AdaBoost:
     def fit(self, data, features, target, iterations):
         weights = [1/len(data)] * len(data)
         for i in range(iterations):
-            best_weighted_gain = 0
+
+            best_weighted_gain = -1
             best_feature_index = 0
             best_stump = None
             # Get best attribute
@@ -23,22 +24,27 @@ class AdaBoost:
                 feature_index = features.index(feature)
                 stump = DecisionTreeStump()
                 gain = stump.calculate_gain(data, feature_index, target, weights)
-                scaled_gain = gain * weights[feature_index]
 
-                if scaled_gain > best_weighted_gain:
+                if gain > best_weighted_gain:
                     best_feature_index = feature_index
                     best_weighted_gain = gain
                     best_stump = stump
-            print(features[best_feature_index])
-
-            alpha = .5 * math.log((1-weights[best_feature_index])/(weights[best_feature_index] + 1e-10))
+            #     print("Feature, gain", feature, gain)
+            # print("Best Feature:", features[best_feature_index])
+            
+            # Find misclassified rows
+            predictions = [best_stump.predict(row) for row in data]
+            errors = 0
+            for i in range(len(predictions)):
+                if predictions[i] != data.iloc[i][target]:
+                    errors += 1
+            total_error = errors/len(data)
+            alpha = .5 * math.log((1-total_error)/(total_error + 1e-10))
+            print("Alpha:",alpha)
 
             # Add alpha and stumps into arrays
             self.alphas.append(alpha)
             self.stumps.append(stump)
-            
-            # Find misclassified rows
-            predictions = [best_stump.predict(row) for row in data]
 
             for i in range(len(predictions)):
                 if predictions[i] != data.iloc[i][target]:

@@ -38,8 +38,8 @@ test_file_path = 'bank/test.csv'
 testing_data = pd.read_csv(test_file_path, header=None, names=columns)
 
 ad = AdaBoost()
-iterations = 10
-for i in range(iterations):
+iterations = 60
+for i in range(50,iterations):
     print("Iterations:", i)
     t = ad.fit(training_data, features, target_column, i)
     print(ad.test_decision_tree(testing_data, target_column))
