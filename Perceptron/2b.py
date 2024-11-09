@@ -17,16 +17,21 @@ testing_y = testing_data.iloc[:, -1]
 training_y = training_y.map({0: -1, 1: 1})
 testing_y = testing_y.map({0: -1, 1: 1})
 
-vp = VotedPerceptron()
 
-vp.train(training_x, training_y)
+epoch = 10
+vp_weights = None
+cummulative = 0
+for i in range(epoch):
+    vp = VotedPerceptron(iterations=epoch)
 
-vp_preds = vp.predict_all(testing_x)
+    vp.train(training_x, training_y)
 
-vp_error_rate = vp.calculate_error_rate(vp_preds, testing_y)
-vp_weights = vp.get_weights_with_counts()
+    vp_preds = vp.predict_all(testing_x)
 
-print(f'VP Average error rate: {vp_error_rate}')
+    cummulative += vp.calculate_error_rate(vp_preds, testing_y)
+    vp_weights = vp.get_weights_with_counts()
+
+print(f'VP Average error rate: {cummulative/epoch}')
 
 for weights, vote in vp_weights.items():
     print(weights,vote)
